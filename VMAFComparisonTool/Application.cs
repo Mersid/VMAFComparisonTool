@@ -13,6 +13,9 @@ public class Application
     {
         SemaphoreSlim semaphore = new SemaphoreSlim(options.Parallel);
         Queue<EncodingSettings> encodingSettingsQueue = new Queue<EncodingSettings>(GetEncodingSettings());
+
+        // List of tasks to track when the program can exit.
+        List<Task> tasks = [];
         Stopwatch sw = new Stopwatch();
         sw.Start();
 
@@ -35,12 +38,13 @@ public class Application
 
             // TODO: Improve this. Bit of a hack job...
             string args = $"{options.Arguments.Substring(1, options.Arguments.Length - 2)} -preset {encodingSettings.Preset} -crf {encodingSettings.Crf}";
-            videoEncoder.Start(args, $"_{Path.GetFileNameWithoutExtension(options.OutputPath)}_{encodingSettings.Preset}_{encodingSettings.Crf}.mkv");
+            Task t = videoEncoder.Start(args, $"_{Path.GetFileNameWithoutExtension(options.OutputPath)}_{encodingSettings.Preset}_{encodingSettings.Crf}.mkv");
+            tasks.Add(t);
 
             Console.WriteLine($"Encoding {encodingSettings.Preset} {encodingSettings.Crf}");
         }
 
-        // TODO: Wait for all encodes to finish
+        Task.WaitAll(tasks.ToArray());
         sw.Stop();
         Console.WriteLine($"Encoding took {sw.Elapsed}");
     }

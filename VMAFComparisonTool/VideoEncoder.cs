@@ -21,7 +21,7 @@ public class VideoEncoder
     /// A task that represents the encoding process.
     /// This task completes when the encoding process exits.
     /// </summary>
-    public Task Task { get; private set; }
+    private Task Task { get; init; }
 
     /// <summary>
     /// Null when Start() has not yet been called.
@@ -89,12 +89,15 @@ public class VideoEncoder
     /// </summary>
     /// <param name="ffmpegArguments">Arguments to pass to ffmpeg.</param>
     /// <param name="outputFilePath">The path to the output file, relative to the current working directory.</param>
-    public void Start(string ffmpegArguments, string outputFilePath)
+    public Task Start(string ffmpegArguments, string outputFilePath)
     {
         if (State != EncodingState.Pending)
         {
             Log.AppendLine($"Cannot start encoding, state is not pending. Current state: {State}");
-            return;
+
+            // Return a completed task to prevent the caller from awaiting on a task that will never complete.
+            Task.Start();
+            return Task.CompletedTask;
         }
 
         string outputFilePathAbsolute = Path.Combine(Environment.CurrentDirectory, outputFilePath);
@@ -132,6 +135,8 @@ public class VideoEncoder
         Process.BeginErrorReadLine();
 
         Process.Exited += OnProcessExited;
+
+        return Task;
     }
 
     /// <summary>
@@ -146,6 +151,10 @@ public class VideoEncoder
         State = Process.ExitCode == 0 ? EncodingState.Success : EncodingState.Error;
 
         Log.AppendLine($"Process exited with code {Process.ExitCode}");
+
+        // Mark the task as completed
+        Task.Start();
+        Task.Wait();
         InfoUpdate?.Invoke(this, null);
         ProcessExited?.Invoke(this);
 
