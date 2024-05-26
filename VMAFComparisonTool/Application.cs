@@ -21,9 +21,9 @@ public class Application
         sw.Start();
 
         // TEST
-        encodingSettingsQueue.Clear();
-        encodingSettingsQueue.Enqueue(new EncodingSettings {Preset = "veryfast", Crf = 23});
-        VideoEncoder test;
+        // encodingSettingsQueue.Clear();
+        // encodingSettingsQueue.Enqueue(new EncodingSettings {Preset = "veryfast", Crf = 23});
+        // VideoEncoder test;
 
         while (encodingSettingsQueue.Count > 0)
         {
@@ -44,10 +44,11 @@ public class Application
                 {
                     // encodingSettings obtained by closure.
                     result.VMAFScore = sender.VMAFScore.Value;
+                    result.ProcessorTime = sender.ProcessorTime;
                 };
                 Task t2 = encoder2.StartVMAF(sender.OutputFilePath);
                 tasks.Add(t2);
-                test = encoder2;
+                // test = encoder2;
             };
 
             // TODO: Improve this. Bit of a hack job...

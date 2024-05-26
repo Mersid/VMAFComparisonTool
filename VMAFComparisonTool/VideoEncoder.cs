@@ -44,6 +44,12 @@ public class VideoEncoder
     public double CurrentDuration { get; private set; }
     public EncodingState State { get; private set; } = EncodingState.Pending;
 
+    /// <summary>
+    /// The time the processor spent encoding the video.
+    /// Might be a bit more useful since we're parallel processing, but I dunno...
+    /// </summary>
+    public TimeSpan ProcessorTime { get; private set; }
+
     public event Action<VideoEncoder, DataReceivedEventArgs?>? InfoUpdate;
     public event Action<VideoEncoder>? ProcessExited;
 
@@ -169,8 +175,10 @@ public class VideoEncoder
     private void OnProcessExited(object? sender, EventArgs args)
     {
         Debug.Assert(Process != null, nameof(Process) + " != null");
+        Process.WaitForExit(); // TODO: THIS!!!
 
         State = Process.ExitCode == 0 ? EncodingState.Success : EncodingState.Error;
+        ProcessorTime = Process.TotalProcessorTime;
 
         Log.AppendLine($"Process exited with code {Process.ExitCode}");
 
