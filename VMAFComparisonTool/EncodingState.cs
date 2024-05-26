@@ -1,4 +1,4 @@
-﻿namespace FFBatchConverter;
+﻿namespace VMAFComparisonTool;
 
 public enum EncodingState
 {

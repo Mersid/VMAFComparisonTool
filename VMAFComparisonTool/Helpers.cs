@@ -1,7 +1,6 @@
 ﻿using System.Diagnostics;
-using System.Runtime.InteropServices;
 
-namespace FFBatchConverter;
+namespace VMAFComparisonTool;
 
 public static class Helpers
 {

@@ -1,19 +1,27 @@
-﻿using System.Data;
-using System.Diagnostics;
+﻿using System.Diagnostics;
 using System.Text;
 using System.Text.Json;
 
-namespace FFBatchConverter;
+namespace VMAFComparisonTool;
 
 /// <summary>
 /// Represents the encoder for a single video.
 /// </summary>
 public class VideoEncoder
 {
-    // TODO: Minimum size
-    // TODO:
     public string InputFilePath { get; }
+
+    /// <summary>
+    /// Null if the encoding process has not yet started. This is an absolute file path.
+    /// </summary>
+    public string? OutputFilePath { get; private set; }
     public StringBuilder Log { get; } = new StringBuilder();
+
+    /// <summary>
+    /// A task that represents the encoding process.
+    /// This task completes when the encoding process exits.
+    /// </summary>
+    public Task Task { get; private set; }
 
     /// <summary>
     /// Null when Start() has not yet been called.
@@ -28,10 +36,12 @@ public class VideoEncoder
     public EncodingState State { get; private set; } = EncodingState.Pending;
 
     public event Action<VideoEncoder, DataReceivedEventArgs?>? InfoUpdate;
+    public event Action<VideoEncoder>? ProcessExited;
 
     public VideoEncoder(string inputFilePath)
     {
         InputFilePath = inputFilePath;
+        Task = new Task(() => { });
 
         Process probe = new Process
         {
@@ -74,7 +84,12 @@ public class VideoEncoder
         }
     }
 
-    public void Start(string ffmpegArguments, string outputDirectoryRelative, string extension)
+    /// <summary>
+    /// Starts the encoding process.
+    /// </summary>
+    /// <param name="ffmpegArguments">Arguments to pass to ffmpeg.</param>
+    /// <param name="outputFilePath">The path to the output file, relative to the current working directory.</param>
+    public void Start(string ffmpegArguments, string outputFilePath)
     {
         if (State != EncodingState.Pending)
         {
@@ -82,21 +97,21 @@ public class VideoEncoder
             return;
         }
 
-        string directory = Path.GetDirectoryName(InputFilePath) ?? ".";
-        string outputSubdirectory = Path.Combine(directory, outputDirectoryRelative);
-        string fileName = Path.GetFileNameWithoutExtension(InputFilePath);
-        string newFilePath = Path.Combine(outputSubdirectory, $"{fileName}.{extension}");
+        string outputFilePathAbsolute = Path.Combine(Environment.CurrentDirectory, outputFilePath);
+        string outputFileDirectory = Path.GetDirectoryName(outputFilePathAbsolute) ?? throw new InvalidOperationException();
+
+        OutputFilePath = outputFilePathAbsolute;
 
         // Create the output directory if it doesn't exist
-        if (!Directory.Exists(outputSubdirectory))
-            Directory.CreateDirectory(outputSubdirectory);
+        if (!Directory.Exists(outputFileDirectory))
+            Directory.CreateDirectory(outputFileDirectory);
 
         Process = new Process
         {
             StartInfo = new ProcessStartInfo
             {
                 FileName = Helpers.GetFFmpegPath(),
-                Arguments = $"-i \"{InputFilePath}\" -y {ffmpegArguments} \"{newFilePath}\"",
+                Arguments = $"-i \"{InputFilePath}\" -y {ffmpegArguments} \"{outputFilePathAbsolute}\"",
                 RedirectStandardOutput = true,
                 RedirectStandardError = true,
                 UseShellExecute = false,
@@ -132,6 +147,7 @@ public class VideoEncoder
 
         Log.AppendLine($"Process exited with code {Process.ExitCode}");
         InfoUpdate?.Invoke(this, null);
+        ProcessExited?.Invoke(this);
 
         Process.OutputDataReceived -= OnStreamDataReceivedEvent;
         Process.ErrorDataReceived -= OnStreamDataReceivedEvent;
