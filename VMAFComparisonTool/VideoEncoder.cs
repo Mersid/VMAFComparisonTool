@@ -12,9 +12,18 @@ public class VideoEncoder
     public string InputFilePath { get; }
 
     /// <summary>
-    /// Null if the encoding process has not yet started. This is an absolute file path.
+    /// Null if the encoding process has not yet started or if the processing method
+    /// does not generate an output. This is an absolute file path.
     /// </summary>
     public string? OutputFilePath { get; private set; }
+
+    /// <summary>
+    /// The VMAF score of the video. Null if the encoding process has not yet started
+    /// or if the processing method does not generate a VMAF score.
+    /// </summary>
+    public double? VMAFScore { get; private set; }
+
+    private bool IsVMAF { get; set; }
     public StringBuilder Log { get; } = new StringBuilder();
 
     /// <summary>
@@ -84,12 +93,34 @@ public class VideoEncoder
         }
     }
 
-    /// <summary>
-    /// Starts the encoding process.
-    /// </summary>
-    /// <param name="ffmpegArguments">Arguments to pass to ffmpeg.</param>
-    /// <param name="outputFilePath">The path to the output file, relative to the current working directory.</param>
-    public Task Start(string ffmpegArguments, string outputFilePath)
+    public Task StartEncoding(string ffmpegArguments, string outputFilePath)
+    {
+        string outputFilePathAbsolute = Path.Combine(Environment.CurrentDirectory, outputFilePath);
+        string outputFileDirectory = Path.GetDirectoryName(outputFilePathAbsolute) ?? throw new InvalidOperationException();
+
+        OutputFilePath = outputFilePathAbsolute;
+
+        // Create the output directory if it doesn't exist
+        if (!Directory.Exists(outputFileDirectory))
+            Directory.CreateDirectory(outputFileDirectory);
+
+        string arguments = $"-i \"{InputFilePath}\" -y {ffmpegArguments} \"{outputFilePathAbsolute}\"";
+        return StartProcess(arguments);
+    }
+
+    public Task StartVMAF(string distortedPath)
+    {
+        IsVMAF = true;
+
+        // Note that the filter reverses the order of the inputs. The filter expects the distorted video first, then the reference video.
+        // By swapping them, we can put the reference video first, then the distorted video.
+        string arguments = $"-i \"{InputFilePath}\" -i \"{distortedPath}\" " +
+                           $"-filter_complex \"[0:v]setpts=PTS-STARTPTS[reference]; [1:v]setpts=PTS-STARTPTS[distorted]; [distorted][reference]libvmaf=model=version=vmaf_v0.6.1:n_threads={Environment.ProcessorCount}\" " +
+                           $"-f null -";
+        return StartProcess(arguments);
+    }
+
+    private Task StartProcess(string arguments)
     {
         if (State != EncodingState.Pending)
         {
@@ -100,21 +131,12 @@ public class VideoEncoder
             return Task.CompletedTask;
         }
 
-        string outputFilePathAbsolute = Path.Combine(Environment.CurrentDirectory, outputFilePath);
-        string outputFileDirectory = Path.GetDirectoryName(outputFilePathAbsolute) ?? throw new InvalidOperationException();
-
-        OutputFilePath = outputFilePathAbsolute;
-
-        // Create the output directory if it doesn't exist
-        if (!Directory.Exists(outputFileDirectory))
-            Directory.CreateDirectory(outputFileDirectory);
-
         Process = new Process
         {
             StartInfo = new ProcessStartInfo
             {
                 FileName = Helpers.GetFFmpegPath(),
-                Arguments = $"-i \"{InputFilePath}\" -y {ffmpegArguments} \"{outputFilePathAbsolute}\"",
+                Arguments = arguments,
                 RedirectStandardOutput = true,
                 RedirectStandardError = true,
                 UseShellExecute = false,
@@ -152,15 +174,16 @@ public class VideoEncoder
 
         Log.AppendLine($"Process exited with code {Process.ExitCode}");
 
-        // Mark the task as completed
-        Task.Start();
-        Task.Wait();
         InfoUpdate?.Invoke(this, null);
         ProcessExited?.Invoke(this);
 
         Process.OutputDataReceived -= OnStreamDataReceivedEvent;
         Process.ErrorDataReceived -= OnStreamDataReceivedEvent;
         Process.Exited -= OnProcessExited;
+
+        // Mark the task as completed.
+        Task.Start();
+        Task.Wait();
     }
 
     /// <summary>
@@ -187,6 +210,20 @@ public class VideoEncoder
             {
                 Log.AppendLine(e.Message);
             }
+        }
+
+        if (IsVMAF)
+        {
+            int t = 8;
+        }
+
+        // Try extract VMAF score.
+        if (IsVMAF && args.Data != null && args.Data.Contains(" VMAF score: "))
+        {
+            // The string actually terminates with something like "e=N/A".
+            string vmafScore = args.Data.Split("VMAF score:")[1].Split("e=")[0];
+
+            VMAFScore = double.Parse(vmafScore);
         }
 
         Log.AppendLine(args.Data);
