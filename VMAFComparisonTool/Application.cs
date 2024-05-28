@@ -12,11 +12,21 @@ public class Application
     private async Task RunAsync(Options options)
     {
         SemaphoreSlim semaphore = new SemaphoreSlim(options.Parallel);
-        Queue<EncodingSettings> encodingSettingsQueue = new Queue<EncodingSettings>(GetEncodingSettings());
-        List<EncodingResult> results = [];
 
-        // List of tasks to track when the program can exit.
-        List<Task> tasks = [];
+        // Parser requires the entire set of arguments to be quoted. We need to remove it before passing it
+        // on to the pipeline.
+        string unquotedArguments = options.Arguments.Substring(1, options.Arguments.Length - 2);
+
+        // List of pipelines we'll need for this job.
+        List<EncodingPipeline> pipelines =
+        [
+            ..GetEncodingSettings().Select(settings =>
+                new EncodingPipeline(options.InputPath, unquotedArguments, settings.Preset, settings.Crf))
+        ];
+
+        // Queue of pipelines that have yet to run. Will always be a subset of pipelines.
+        Queue<EncodingPipeline> pipelineQueue = new Queue<EncodingPipeline>(pipelines);
+
         Stopwatch sw = new Stopwatch();
         sw.Start();
 
@@ -25,48 +35,22 @@ public class Application
         // encodingSettingsQueue.Enqueue(new EncodingSettings {Preset = "veryfast", Crf = 23});
         // VideoEncoder test;
 
-        while (encodingSettingsQueue.Count > 0)
+        while (pipelineQueue.Count > 0)
         {
             await semaphore.WaitAsync();
-            EncodingSettings encodingSettings = encodingSettingsQueue.Dequeue();
-            EncodingResult result = new EncodingResult { Settings = encodingSettings };
-            results.Add(result);
-            VideoEncoder videoEncoder = new VideoEncoder(options.InputPath);
-            videoEncoder.ProcessExited += (sender) =>
+
+            EncodingPipeline pipeline = pipelineQueue.Dequeue();
+            pipeline.PipelineCompleted += _ =>
             {
-                // TODO: What if exit with fail code?
                 semaphore.Release();
-
-                result.Size = new FileInfo(sender.OutputFilePath).Length;
-
-                VideoEncoder encoder2 = new VideoEncoder(options.InputPath);
-                encoder2.ProcessExited += (sender) =>
-                {
-                    // encodingSettings obtained by closure.
-                    result.VMAFScore = sender.VMAFScore.Value;
-                    result.ProcessorTime = sender.ProcessorTime;
-                };
-                Task t2 = encoder2.StartVMAF(sender.OutputFilePath);
-                tasks.Add(t2);
-                // test = encoder2;
             };
+            pipeline.Start();
 
-            // TODO: Improve this. Bit of a hack job...
-            string args = $"{options.Arguments.Substring(1, options.Arguments.Length - 2)} -preset {encodingSettings.Preset} -crf {encodingSettings.Crf}";
-            Task t = videoEncoder.StartEncoding(args, $"_{Path.GetFileNameWithoutExtension(options.OutputPath)}_{encodingSettings.Preset}_{encodingSettings.Crf}.mkv");
-            tasks.Add(t);
-
-            Console.WriteLine($"Encoding {encodingSettings.Preset} {encodingSettings.Crf}");
+            Console.WriteLine($"Encoding {pipeline.Preset} {pipeline.Crf}");
         }
 
-        Task.WaitAll(tasks.ToArray());
-        // When the number of videos to encode is less than the number of parallel encodes, the above wait
-        // may only wait for all the videos to finish encoding, not the VMAF calculation. This is because
-        // that line of code is hit before all the VMAF calculation task is added to the list of tasks. Tasks
-        // added after the wait is called will not be counted. This is why we need to wait again here.
-        // Since the VMAF task is generated before the encoding task is complete, calling the wait again
-        // will ensure that any VMAF tasks are also awaited.
-        Task.WaitAll(tasks.ToArray());
+        Task[] tasks = pipelines.Select(pipeline => pipeline.Task).ToArray();
+        Task.WaitAll(tasks);
 
         sw.Stop();
         Console.WriteLine($"Encoding took {sw.Elapsed}");
