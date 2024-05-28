@@ -11,6 +11,10 @@ public class Application
 
     private async Task RunAsync(Options options)
     {
+        // Test that we can write to the output file. We don't want to run the entire encoding process
+        // to find out that we can't write to the output file!
+        await File.WriteAllTextAsync(options.OutputPath, "Calculating VMAF scores. This file will be overwritten.");
+
         SemaphoreSlim semaphore = new SemaphoreSlim(options.Parallel);
 
         // Parser requires the entire set of arguments to be quoted. We need to remove it before passing it
@@ -29,11 +33,6 @@ public class Application
 
         Stopwatch sw = new Stopwatch();
         sw.Start();
-
-        // TEST
-        // encodingSettingsQueue.Clear();
-        // encodingSettingsQueue.Enqueue(new EncodingSettings {Preset = "veryfast", Crf = 23});
-        // VideoEncoder test;
 
         while (pipelineQueue.Count > 0)
         {
@@ -54,6 +53,10 @@ public class Application
 
         sw.Stop();
         Console.WriteLine($"Encoding took {sw.Elapsed}");
+
+        List<EncodingResult> results = pipelines.Select(pipeline => pipeline.Result).ToList();
+        CsvWriter.Write(options.OutputPath, results);
+        Console.WriteLine($"Done! Results written to {options.OutputPath}");
     }
 
     private IEnumerable<EncodingSettings> GetEncodingSettings()
