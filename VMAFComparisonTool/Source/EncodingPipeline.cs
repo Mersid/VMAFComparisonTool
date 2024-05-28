@@ -86,7 +86,6 @@ public class EncodingPipeline
                 vmafEncoder.StartVMAF(videoEncoder.OutputFilePath);
             };
 
-            // TODO: Improve this. Bit of a hack job...
             string args = $"{Arguments} -preset {Preset} -crf {Crf}";
             encoder.StartEncoding(args, $"{Preset}_{Crf}.mkv");
 
@@ -97,6 +96,7 @@ public class EncodingPipeline
         catch (Exception e)
         {
             // If an error happened, return false so caller can try again if need be.
+            // Don't know if this actually ever gets called, as errors in events are not caught here.
             return false;
         }
     }

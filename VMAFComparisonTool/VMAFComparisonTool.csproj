@@ -7,6 +7,7 @@
         <Nullable>enable</Nullable>
         <TrimMode>partial</TrimMode>
         <PublishAot>false</PublishAot>
+        <AssemblyVersion>1.0.0</AssemblyVersion>
     </PropertyGroup>
 
     <ItemGroup>

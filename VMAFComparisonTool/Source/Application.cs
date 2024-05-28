@@ -34,6 +34,7 @@ public class Application
         Stopwatch sw = new Stopwatch();
         sw.Start();
 
+        int i = 1;
         while (pipelineQueue.Count > 0)
         {
             await semaphore.WaitAsync();
@@ -45,7 +46,7 @@ public class Application
             };
             pipeline.Start();
 
-            Console.WriteLine($"Encoding {pipeline.Preset} {pipeline.Crf}");
+            Console.WriteLine($"[{i++}/{pipelines.Count}] Encoding {pipeline.Preset} {pipeline.Crf}");
         }
 
         Task[] tasks = pipelines.Select(pipeline => pipeline.Task).ToArray();

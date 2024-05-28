@@ -175,7 +175,7 @@ public class VideoEncoder
     private void OnProcessExited(object? sender, EventArgs args)
     {
         Debug.Assert(Process != null, nameof(Process) + " != null");
-        Process.WaitForExit(); // TODO: THIS!!!
+        Process.WaitForExit(); // May help reduce the change of failure by allowing text buffers to flush.
 
         State = Process.ExitCode == 0 ? EncodingState.Success : EncodingState.Error;
         ProcessorTime = Process.TotalProcessorTime;
