@@ -1,0 +1,72 @@
+name: Build
+
+on:
+  # push:
+  #   branches: [ "master" ]
+  # pull_request:
+  #   branches: [ "master" ]
+  workflow_dispatch
+    
+
+jobs:
+  build:
+    continue-on-error: true
+    strategy:
+      matrix:
+        os: [windows-latest, ubuntu-latest, macos-latest]
+        arch: [x64, arm64]
+        
+
+    runs-on: ${{matrix.os}}  # For a list of available runner types, refer to
+                             # https://help.github.com/en/actions/reference/workflow-syntax-for-github-actions#jobsjob_idruns-on
+
+    env:
+      rid: ${{ contains(matrix.os, 'windows') && 'win' || contains(matrix.os, 'ubuntu') && 'linux' || contains(matrix.os, 'macos') && 'osx' }}-${{ matrix.arch }}
+
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+
+    # Install the .NET Core workload
+    - name: Install .NET Core
+      uses: actions/setup-dotnet@v4
+      with:
+        dotnet-version: 8.0.x
+
+    # For Linux, we'll need to install tools to compile for ARM from x64
+    - name: Setup ARM compilation toolchain
+      if:
+        ${{ matrix.os == 'ubuntu-latest' && matrix.arch == 'arm64' }}
+      # https://learn.microsoft.com/en-us/dotnet/core/deploying/native-aot/cross-compile
+      run: |
+        sudo dpkg --add-architecture arm64
+        sudo bash -c 'cat > /etc/apt/sources.list.d/arm64.list <<EOF
+        deb [arch=arm64] http://ports.ubuntu.com/ubuntu-ports/ jammy main restricted
+        deb [arch=arm64] http://ports.ubuntu.com/ubuntu-ports/ jammy-updates main restricted
+        deb [arch=arm64] http://ports.ubuntu.com/ubuntu-ports/ jammy-backports main restricted universe multiverse
+        EOF'
+        sudo sed -i -e 's/deb http/deb [arch=amd64] http/g' /etc/apt/sources.list
+        sudo sed -i -e 's/deb mirror/deb [arch=amd64] mirror/g' /etc/apt/sources.list
+        sudo apt update
+        sudo apt install -y clang llvm binutils-aarch64-linux-gnu gcc-aarch64-linux-gnu zlib1g-dev:arm64
+
+    # Execute all unit tests in the solution
+    - name: Execute unit tests
+      run: dotnet test
+
+    # Restore the application to populate the obj folder with RuntimeIdentifiers
+    - name: Restore the application
+      run: dotnet restore
+
+    # Build
+    - name: Publish
+      run: dotnet publish -r ${{ env.rid }} --self-contained true -p:PublishTrimmed=true -p:PublishAot=true -o build-${{ env.rid }}
+
+    # Upload the build artifacts: https://github.com/marketplace/actions/upload-a-build-artifact
+    - name: Upload build artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: Build ${{ env.rid }}
+        path: ./build-${{ env.rid }}
