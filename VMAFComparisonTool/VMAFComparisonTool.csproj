@@ -17,9 +17,6 @@
 
     <ItemGroup>
       <None Remove="test.webm" />
-      <Content Include="test.webm">
-        <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-      </Content>
     </ItemGroup>
 
 </Project>
